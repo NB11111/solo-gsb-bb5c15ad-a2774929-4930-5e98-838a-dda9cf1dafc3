@@ -418,6 +418,73 @@ $("#btn-download-marked").addEventListener("click", () => {
   if (state.markedUrl) window.open(state.markedUrl.split("?")[0], "_blank");
 });
 
+/* ---------------- 图片隐私检查（EXIF，只读不落盘） ---------------- */
+
+$("#btn-privacy").addEventListener("click", async () => {
+  const file = $("#privacy-file").files[0];
+  const status = $("#privacy-status");
+  if (!file) return fail(status, "请先选择一张 PNG / JPEG 图片。");
+  if (!/^image\/(png|jpe?g)$/i.test(file.type)) {
+    return fail(status, "仅支持 PNG / JPEG 图片。");
+  }
+
+  const fd = new FormData();
+  fd.append("image", file);
+  busy(status, "正在解析 EXIF 拍摄时间 / 相机 / GPS…");
+  try {
+    const r = await api("/api/privacy-check", { method: "POST", body: fd });
+    renderPrivacyResult(r);
+    ok(status, "检查完成（图片与元数据均未保存）。");
+  } catch (err) {
+    $("#privacy-result").classList.add("hidden");
+    fail(status, err.message);
+  }
+});
+
+function renderPrivacyResult(r) {
+  $("#privacy-result").classList.remove("hidden");
+
+  const warnBox = $("#privacy-warnings");
+  warnBox.innerHTML = "";
+  (r.warnings || []).forEach((w) => {
+    const div = document.createElement("div");
+    div.className = "privacy-warn";
+    div.textContent = "⚠ " + w;
+    warnBox.appendChild(div);
+  });
+
+  const time = r.date_time
+    ? `${escapeHtml(r.date_time)}${r.date_time_iso ? ` <small>(${escapeHtml(r.date_time_iso)})</small>` : ""}`
+    : "无";
+  $("#pv-time").innerHTML = time;
+  $("#pv-make").textContent = r.camera_make || "无";
+  $("#pv-model").textContent = r.camera_model || "无";
+
+  if (r.gps) {
+    $("#pv-lat").innerHTML = gpsText(r.gps.latitude, r.gps.latitude_dms, r.gps.latitude_ref);
+    $("#pv-lon").innerHTML = gpsText(r.gps.longitude, r.gps.longitude_dms, r.gps.longitude_ref);
+  } else {
+    $("#pv-lat").textContent = "无";
+    $("#pv-lon").textContent = "无";
+  }
+  $("#pv-meta").textContent =
+    `${r.format || "—"} · ${r.width} × ${r.height}px · ${formatBytes(r.bytes)}` +
+    (r.exif_present ? "" : "（无 EXIF）");
+}
+
+function gpsText(decimal, dms, ref) {
+  if (decimal === null || decimal === undefined) return "无";
+  const dir = ref ? ` ${escapeHtml(ref)}` : "";
+  const dmsHtml = dms ? `<small>${escapeHtml(dms)}${dir}</small>` : "";
+  return `${decimal}${dmsHtml ? "<br>" + dmsHtml : ""}`;
+}
+
+function formatBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
+
 /* ---------------- UI 辅助 ---------------- */
 
 function setBar(name, pct, label) {

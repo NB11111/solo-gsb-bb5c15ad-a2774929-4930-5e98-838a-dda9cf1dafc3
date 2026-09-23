@@ -101,6 +101,34 @@
       <div class="status" id="detect-upload-status"></div>
     </section>
 
+    <section class="panel" id="panel-privacy">
+      <h2><span class="num">🔒</span> 图片隐私检查（EXIF）</h2>
+      <p class="muted">
+        上传 <b>PNG / JPEG</b> 照片，解析 EXIF 中的<b>拍摄时间</b>、<b>相机品牌 / 型号</b>与
+        <b>GPS 经纬度</b>（度分秒按 N/S、E/W 还原为带符号十进制度）。
+        检查在内存中完成，<b>不保存图片或元数据、不创建任务</b>，结果仅返回给本次请求。
+      </p>
+      <label class="field">
+        <span>待检查图片（仅 PNG / JPEG）</span>
+        <input type="file" id="privacy-file" accept="image/png,image/jpeg" />
+      </label>
+      <button class="primary privacy" id="btn-privacy">检查图片隐私信息</button>
+      <div class="status" id="privacy-status"></div>
+
+      <div id="privacy-result" class="privacy-box hidden">
+        <div id="privacy-warnings"></div>
+        <dl class="privacy-dl">
+          <dt>拍摄时间</dt><dd id="pv-time">无</dd>
+          <dt>相机品牌</dt><dd id="pv-make">无</dd>
+          <dt>相机型号</dt><dd id="pv-model">无</dd>
+          <dt>纬度</dt><dd id="pv-lat">无</dd>
+          <dt>经度</dt><dd id="pv-lon">无</dd>
+          <dt>图片格式 / 尺寸</dt><dd id="pv-meta">—</dd>
+        </dl>
+        <small class="muted">本次检查未在服务端保存图片或 EXIF 元数据。</small>
+      </div>
+    </section>
+
     <!-- ===================== 右栏：预览与结果 ===================== -->
     <section class="panel preview-panel">
       <div class="preview-tabs">

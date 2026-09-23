@@ -5,6 +5,7 @@
   POST /api/embed        上传图片 + 文本 -> 含水印 PNG
   POST /api/attack       对任务图片施加 JPEG 重压缩 / 中心裁切
   POST /api/detect       上传图片或引用任务图片 -> 水印检测结果 + 失真叠加图
+  POST /api/privacy-check  上传 PNG/JPEG -> 只读解析 EXIF 拍摄时间/相机/GPS（不落盘、不建任务）
   GET  /api/jobs/{id}/{kind}  任务文件下载（original/watermarked/target/marked）
   GET  /api/jobs/{id}/detections/{det_id}/{kind}  某次检测的输入快照 / 标注图
   POST /api/jobs/{id}/reports   选择一次或多次检测 -> 可验证 JSON 报告并追加归档
@@ -14,7 +15,6 @@
 
 from __future__ import annotations
 
-import io
 import json
 import os
 import time
@@ -25,10 +25,11 @@ import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from PIL import Image, ImageOps
+from PIL import Image
 from pydantic import BaseModel
 
 from . import archive, dctwm as wm
+from . import exifcheck
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -91,9 +92,8 @@ def _resolve_image(file: UploadFile | None, job_id: str | None,
         if len(data) > MAX_UPLOAD_BYTES:
             raise HTTPException(status_code=413, detail="图片不能超过 16MB。")
         try:
-            im = Image.open(io.BytesIO(data))
-            im = ImageOps.exif_transpose(im).convert("RGB")
-        except Exception:
+            im = exifcheck.open_rgb_transposed(data)
+        except exifcheck.PrivacyCheckError:
             raise HTTPException(status_code=400, detail="无法解析上传的图片。")
         return _check_dimensions(np.array(im)), "uploaded"
 
@@ -174,8 +174,8 @@ async def embed(
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="图片不能超过 16MB。")
     try:
-        pil = ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("RGB")
-    except Exception:
+        pil = exifcheck.open_rgb_transposed(data)
+    except exifcheck.PrivacyCheckError:
         raise HTTPException(status_code=400, detail="无法解析上传的图片。")
     rgb = _check_dimensions(np.array(pil))
 
@@ -335,6 +335,34 @@ async def detect(
             f"/api/jobs/{job_id}/detections/{detection_id}/marked"
             if has_overlay else None
         ),
+    })
+
+
+# ---------------------------------------------------------------- 图片隐私检查
+
+@app.post("/api/privacy-check")
+async def privacy_check(image: UploadFile = File(...)):
+    """只读解析 PNG/JPEG 的 EXIF 拍摄时间 / 相机品牌型号 / GPS。
+
+    不落盘、不建任务、不触碰水印任务与报告归档；结果仅随本次响应返回。
+    EXIF 损坏 / 无法解码不视为错误（200 + warnings），只有图片本身
+    无法解码或格式非 PNG/JPEG 才返回 400。
+    """
+    data = await image.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="图片不能超过 16MB。")
+    if not data:
+        raise HTTPException(status_code=400, detail="上传内容为空。")
+    try:
+        result = exifcheck.analyze_privacy(data)
+    except exifcheck.PrivacyCheckError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse({
+        "filename": image.filename,
+        "content_type": image.content_type,
+        "bytes": len(data),
+        **result,
+        "stored": False,
     })
 
 
