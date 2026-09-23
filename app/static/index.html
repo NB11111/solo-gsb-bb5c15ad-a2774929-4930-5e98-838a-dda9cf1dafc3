@@ -101,6 +101,33 @@
       <div class="status" id="detect-upload-status"></div>
     </section>
 
+    <section class="panel" id="panel-privacy">
+      <h2><span class="num">④</span> 图片隐私检查（EXIF）</h2>
+      <p class="muted">
+        上传 <b>PNG / JPEG</b> 照片，解析 EXIF 中可能泄露隐私的<b>拍摄时间</b>、
+        <b>相机品牌 / 型号</b>与 <b>GPS 经纬度</b>。检查结果仅在本次请求中返回，
+        <b>不保存图片或元数据</b>，也不会创建水印任务或进入报告归档。
+      </p>
+      <label class="field">
+        <span>待检查图片（仅 PNG / JPEG）</span>
+        <input type="file" id="privacy-file" accept="image/png,image/jpeg" />
+      </label>
+      <button class="primary privacy-btn" id="btn-privacy">🔍 检查图片隐私信息</button>
+      <div class="status" id="privacy-status"></div>
+
+      <div id="privacy-result" class="privacy-box hidden">
+        <div id="privacy-warnings" class="privacy-warn hidden"></div>
+        <dl class="privacy-list">
+          <dt>拍摄时间</dt><dd id="pv-time" class="pv-val">无</dd>
+          <dt>相机品牌</dt><dd id="pv-make" class="pv-val">无</dd>
+          <dt>相机型号</dt><dd id="pv-model" class="pv-val">无</dd>
+          <dt>GPS 纬度</dt><dd id="pv-lat" class="pv-val">无</dd>
+          <dt>GPS 经度</dt><dd id="pv-lng" class="pv-val">无</dd>
+        </dl>
+        <div id="pv-extra" class="muted privacy-extra"></div>
+      </div>
+    </section>
+
     <!-- ===================== 右栏：预览与结果 ===================== -->
     <section class="panel preview-panel">
       <div class="preview-tabs">

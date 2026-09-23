@@ -61,6 +61,23 @@ WM_DATA_DIR=./data uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 此外，「独立检测」区支持直接上传任意图片（含水印图、JPEG 转发件、截图等）进行盲检测。
 
+### 图片隐私检查（EXIF）
+
+「④ 图片隐私检查（EXIF）」区支持上传 **PNG / JPEG** 照片，解析其中可能泄露隐私的 EXIF 字段：
+
+- **拍摄时间**：`DateTimeOriginal`（其次回退到 `DateTimeDigitized` / `DateTime`），
+  保留 EXIF 原文并尽力归一化为 ISO-8601（带 `OffsetTimeOriginal` 时附时区）；
+- **相机品牌 / 型号**：`Make` / `Model`；
+- **GPS 经纬度**：`GPSLatitude` / `GPSLongitude` 的度分秒按 `N/S`、`E/W` 方向标记
+  还原为**带符号十进制度**（N/E 为正、S/W 为负），同时返回原始度分秒文本与方向字母。
+
+字段缺失时结果中为 `null`，页面明确显示「无」；EXIF 损坏（如 APP1 段被截断、
+TIFF 结构非法）时**不影响图片检查**：接口照常返回 200，可解析部分正常给出，
+损坏情况写入 `warnings`。损坏 EXIF 同样**不阻断水印嵌入 / 检测任务的创建**。
+
+> 隐私检查是**独立接口**：结果仅在当前 HTTP 请求中返回，服务端**不保存图片或任何
+> EXIF 元数据**、不创建水印任务，也不写入攻击记录与报告归档（不产生数据目录条目）。
+
 ### 检测报告可验证归档
 
 检测结果面板内可**勾选一次或多次检测结果**生成规范化 JSON 检测报告（归档）：
@@ -205,6 +222,7 @@ WM_DATA_DIR=./data uvicorn app.main:app --host 0.0.0.0 --port 8000
 | POST | `/api/embed` | multipart：`image`(图片)、`text`、`strength`(low/medium/high)，返回任务 ID 与嵌入指标 |
 | POST | `/api/attack` | JSON：`{job_id, jpeg_quality?, crop_fraction?}`，生成受攻击待测图 |
 | POST | `/api/detect` | multipart：上传 `image` **或**传 `job_id`，返回文本、置信度、指标、检测记录 ID 与标注图 URL |
+| POST | `/api/privacy-check` | multipart：上传 PNG/JPEG `image`，解析 EXIF 拍摄时间 / 相机品牌·型号 / GPS 度分秒→带符号十进制度；结果仅本次返回，**不保存、不建任务、不归档**；缺字段为 `null`，EXIF 损坏返回 200 并在 `warnings` 说明 |
 | GET | `/api/jobs/{id}/{kind}` | 下载 `original` / `watermarked` / `target` / `marked` PNG |
 | GET | `/api/jobs/{id}/detections/{det_id}/{kind}` | 下载某次检测的 `source`（检测输入快照）/ `marked`（标注图）PNG |
 | POST | `/api/jobs/{id}/reports` | JSON：`{"detection_ids": ["det_…", ...]}`（1–20 条），生成可验证报告并追加归档，返回 `report_id`、`download_url`、`verify_url` |
@@ -232,6 +250,37 @@ WM_DATA_DIR=./data uvicorn app.main:app --host 0.0.0.0 --port 8000
   "marked_url": "/api/jobs/.../marked"
 }
 ```
+
+隐私检查响应（字段缺失即 `null`，页面显示「无」）：
+
+```json
+{
+  "filename": "photo.jpg",
+  "format": "JPEG",
+  "width": 4032,
+  "height": 3024,
+  "has_exif": true,
+  "taken_at": "2026:09:23 10:20:30",
+  "taken_at_iso": "2026-09-23T10:20:30",
+  "camera_make": "Canon",
+  "camera_model": "EOS R5",
+  "gps": {
+    "latitude": 39.9075,
+    "longitude": 116.38805556,
+    "latitude_ref": "N",
+    "longitude_ref": "E",
+    "latitude_dms": "39°54′27″",
+    "longitude_dms": "116°23′17″",
+    "altitude_m": 42.0
+  },
+  "warnings": []
+}
+```
+
+> 无 EXIF 时 `has_exif=false` 且各字段为 `null`、`gps` 为 `null`；仅部分字段存在时
+> 缺失项为 `null`（例如有纬度无经度）。EXIF 损坏时图片信息（格式/尺寸）仍正常返回，
+> `warnings` 形如 `["EXIF 数据已损坏：Corrupt EXIF data. …"]`。
+> 图片无法解码或不是 PNG/JPEG 时返回 `400`；超过 16MB 返回 `413`。
 
 ---
 
@@ -265,14 +314,16 @@ compose 默认把数据目录持久化到命名卷 `wm-data`；归档报告与�
 .
 ├── app/
 │   ├── dctwm.py          # 核心算法：DCT 嵌入 / PN 同步 / 相移搜索 / 多数表决 / 失真标注
+│   ├── privacy.py        # 图片隐私检查：EXIF 拍摄时间 / 相机 / GPS 解析（纯内存，损坏容错）
 │   ├── archive.py        # 检测报告：规范化 JSON / SHA-256 清单 / 仅追加哈希链归档 / 校验
-│   ├── main.py           # FastAPI：任务存储、嵌入/攻击/检测/报告接口、静态资源
+│   ├── main.py           # FastAPI：任务存储、嵌入/攻击/检测/隐私检查/报告接口、静态资源
 │   └── static/
-│       ├── index.html    # 单页界面（嵌入 / 攻击 / 检测 / 归档 四区）
+│       ├── index.html    # 单页界面（嵌入 / 攻击 / 检测 / 隐私检查 / 归档）
 │       ├── style.css
 │       └── app.js
 ├── tests/
 │   ├── test_core.py      # 核心算法数值验证（DCT/PN/鲁棒性全链路）
+│   ├── test_privacy.py   # 图片隐私检查：EXIF/GPS 解析、缺字段、损坏容错、不落盘
 │   └── test_reports.py   # 报告归档接口与清单/哈希链校验（篡改、缺失、断链）
 ├── requirements.txt
 ├── Dockerfile
@@ -285,6 +336,7 @@ compose 默认把数据目录持久化到命名卷 `wm-data`；归档报告与�
 ```bash
 python3 tests/test_core.py
 python3 -m pytest tests/test_reports.py -q    # 归档接口端到端测试
+python3 -m pytest tests/test_privacy.py -q    # 图片隐私检查（EXIF/GPS/损坏容错）
 ```
 
 数据目录布局（`WM_DATA_DIR`）：
@@ -307,4 +359,6 @@ archive.log.jsonl                     # 仅追加归档记录（哈希链）
 
 - 本项目定位于**教学/研究实验台**，无鉴权、任务存于本地卷，请勿直接暴露到公网。
 - 上传图片仅用于处理，不会上传到任何第三方；任务按数量自动过期清理。
+- 「图片隐私检查」为纯只读分析：图片与 EXIF 元数据仅存在于请求处理期间，
+  **不落盘、不建任务、不写入归档**，响应结束即释放；建议公开发图前先用它排查 GPS 等隐私字段。
 - 数字水印的鲁棒性是概率性的，标注图与置信度用于辅助判断，不构成版权存证保证。

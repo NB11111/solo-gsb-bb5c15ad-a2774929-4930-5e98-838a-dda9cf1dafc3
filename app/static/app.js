@@ -418,6 +418,91 @@ $("#btn-download-marked").addEventListener("click", () => {
   if (state.markedUrl) window.open(state.markedUrl.split("?")[0], "_blank");
 });
 
+/* ---------------- 图片隐私检查（EXIF） ---------------- */
+
+$("#btn-privacy").addEventListener("click", async () => {
+  const file = $("#privacy-file").files[0];
+  const status = $("#privacy-status");
+  if (!file) return fail(status, "请先选择一张 PNG / JPEG 图片。");
+  if (!/^image\/(png|jpe?g)$/i.test(file.type)) {
+    return fail(status, "仅支持 PNG / JPEG 图片。");
+  }
+  const fd = new FormData();
+  fd.append("image", file);
+  busy(status, "正在解析 EXIF 拍摄时间 / 相机 / GPS…");
+  $("#privacy-result").classList.add("hidden");
+  try {
+    const r = await api("/api/privacy-check", { method: "POST", body: fd });
+    renderPrivacy(r);
+    ok(status, "检查完成（图片与元数据未被保存）。");
+  } catch (err) {
+    fail(status, err.message);
+  }
+});
+
+function renderPrivacy(r) {
+  $("#privacy-result").classList.remove("hidden");
+
+  // 损坏 / 被忽略的 EXIF 段
+  const warnBox = $("#privacy-warnings");
+  if (r.warnings && r.warnings.length) {
+    warnBox.classList.remove("hidden");
+    warnBox.innerHTML = `<b>⚠ EXIF 存在损坏或被忽略的部分（不影响本次检查）</b>` +
+      r.warnings.map((w) => `· ${escapeHtml(w)}`).join("<br>");
+  } else {
+    warnBox.classList.add("hidden");
+    warnBox.innerHTML = "";
+  }
+
+  // 拍摄时间：展示 EXIF 原文；归一化结果若提供了额外信息（如时区）则附注
+  let timeText = "无";
+  if (r.taken_at) {
+    timeText = escapeHtml(r.taken_at);
+    // 仅当归一化值带来额外信息（时区后缀 / Z）时才附注，避免冒号→横杠的重复展示
+    if (r.taken_at_iso && /[zZ]|[+-]\d{2}:\d{2}$/.test(r.taken_at_iso)) {
+      timeText += `<br><span class="muted">归一化：${escapeHtml(r.taken_at_iso)}</span>`;
+    }
+  }
+  setPrivacyField("#pv-time", timeText, !!r.taken_at);
+  setPrivacyField("#pv-make", r.camera_make ? escapeHtml(r.camera_make) : "无", !!r.camera_make);
+  setPrivacyField("#pv-model", r.camera_model ? escapeHtml(r.camera_model) : "无", !!r.camera_model);
+
+  // GPS：带符号十进制度（N/E 为正、S/W 为负），同时展示原始度分秒与方向
+  const hasLat = !!(r.gps && r.gps.latitude != null);
+  const hasLng = !!(r.gps && r.gps.longitude != null);
+  setPrivacyField("#pv-lat", formatGpsAxis(r.gps, "lat"), hasLat);
+  setPrivacyField("#pv-lng", formatGpsAxis(r.gps, "lng"), hasLng);
+
+  const bits = [`${r.format} · ${r.width}×${r.height}px`,
+                r.has_exif ? "包含 EXIF 段" : "无 EXIF 段"];
+  if (r.gps && r.gps.altitude_m !== undefined && r.gps.altitude_m !== null) {
+    bits.push(`海拔 ${r.gps.altitude_m} m`);
+  }
+  if (r.gps && r.gps.present_but_unusable) {
+    bits.push("GPS 段存在但坐标无法解析");
+  }
+  $("#pv-extra").innerHTML = bits.map(escapeHtml).join(" ｜ ");
+}
+
+function setPrivacyField(sel, html, hit) {
+  const el = $(sel);
+  el.innerHTML = html;
+  el.classList.toggle("pv-none", !hit);
+  el.classList.toggle("pv-hit", !!hit);
+}
+
+function formatGpsAxis(gps, axis) {
+  if (!gps) return "无";
+  const dec = axis === "lat" ? gps.latitude : gps.longitude;
+  if (dec === null || dec === undefined) return "无";
+  const dms = axis === "lat" ? gps.latitude_dms : gps.longitude_dms;
+  const ref = axis === "lat" ? gps.latitude_ref : gps.longitude_ref;
+  const parts = [`<b>${dec}</b>°`];
+  if (dms) parts.push(escapeHtml(dms));
+  if (ref) parts.push(escapeHtml(ref));
+  return parts.join(" · ");
+}
+
 /* ---------------- UI 辅助 ---------------- */
 
 function setBar(name, pct, label) {

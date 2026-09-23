@@ -379,6 +379,48 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .verify-detail { font-size: 11.5px; word-break: break-all; margin-bottom: 6px; }
 .report-box .btn-row { gap: 8px; }
 
+/* ---------- 图片隐私检查 ---------- */
+.privacy-btn {
+  background: linear-gradient(135deg, #7a5cff, #5a3fd6);
+}
+.privacy-btn:hover { box-shadow: 0 4px 18px rgba(122, 92, 255, 0.35); }
+
+.privacy-box {
+  margin-top: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.privacy-list {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 8px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+.privacy-list dt { color: var(--muted); }
+.privacy-list dd {
+  margin: 0;
+  text-align: right;
+  word-break: break-all;
+  font-variant-numeric: tabular-nums;
+}
+.privacy-list dd.pv-none { color: #5a667d; }
+.privacy-list dd.pv-hit { color: #ffb27a; font-weight: 600; }
+.privacy-extra { margin-top: 10px; line-height: 1.6; word-break: break-all; }
+.privacy-warn {
+  background: rgba(240, 170, 40, 0.1);
+  border: 1px solid rgba(240, 170, 40, 0.4);
+  color: var(--warn);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  margin-bottom: 10px;
+  line-height: 1.55;
+}
+.privacy-warn b { display: block; margin-bottom: 2px; }
+
 footer {
   text-align: center;
   color: #46536c;
